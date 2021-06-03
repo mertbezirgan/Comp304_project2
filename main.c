@@ -55,15 +55,16 @@ double b;
 
 //SEMAPHORES
 sem_t commentator_sem;
+sem_t sem;
 
 //MUTEXES
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mainMutex = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_t threads[MAX_COMMENTATOR_NUM];
 pthread_cond_t question_available = PTHREAD_COND_INITIALIZER; //Condition variable that is going to check if question is asked and commentators can answer
 pthread_cond_t all_comentators_decided = PTHREAD_COND_INITIALIZER; //Condition to check if moderator can go on after commentators decide to answer
 pthread_cond_t answerQueueConditions[MAX_COMMENTATOR_NUM];
+pthread_cond_t currentlyAnsweringCondition[MAX_COMMENTATOR_NUM];
 pthread_cond_t wait_for_commentator_threds = PTHREAD_COND_INITIALIZER;
 
 int answerQueue[MAX_COMMENTATOR_NUM];
@@ -91,32 +92,37 @@ int main(int argc, char *argv[]) {
 
     //initialize semaphores
     sem_init(&commentator_sem, 0, 1);
+
     pthread_create(&threads[0], NULL, moderator, NULL); //Create 1 moderator thread
     printf("Moderator thread created.\n");
+
     for(int i = 1; i<(n + 1); i++){
         pthread_create(&threads[i], NULL, commentator, (void *)(long)i); //Create n commentator thread
     }
     printf("Commentator threads created.\n");
+    
+    for(int i = 0; i <= n + 1; ++i){
+        pthread_join(threads[i], NULL);
+    }
 }
 
 int currComentator = 0;
 int answerQueueCount = 0;
 int createdCommentatorCount = 0;
+
 void *commentator(void *args){
     int id = (long) args;
-    sem_wait(&commentator_sem);
     createdCommentatorCount++;
+    printf("%d\n", createdCommentatorCount);
     if(createdCommentatorCount == n){
         pthread_cond_signal(&wait_for_commentator_threds);
     }
-    sem_post(&commentator_sem);
     
     for(int i = 0; i < q; i++){
-        //all are going to wait for a question to be asked
         pthread_mutex_lock(&mutex);
-        printf("before wait question ava\n");
+        
+        //all are going to wait for a question to be asked
         pthread_cond_wait(&question_available, &mutex);
-        printf("In commentator loop question available\n");
         //---- decide to answer
         int answer = 0;
         double rand = (double) random() / RAND_MAX;
@@ -127,7 +133,7 @@ void *commentator(void *args){
             answer = 0;
         }
         //----
-
+        
         sem_wait(&commentator_sem); //wait for other commentator
         if(answer == 1){
             answerQueueCount++;
@@ -136,37 +142,54 @@ void *commentator(void *args){
         }else{
             answerQueue[currComentator] = 0;
         }
-        currComentator++;
+        currComentator += 1;
         if(currComentator == n){
             pthread_cond_signal(&all_comentators_decided); //moderator was waiting
         }
         sem_post(&commentator_sem);
 
+
         if(answer == 1){ //answer when its this comentator turns
-
+            pthread_cond_wait(&answerQueueConditions[id], &mutex);
+            //--> we are waiting untill it is our turn to answer.
+            
+            printf("%d has answered\n", id);
+            pthread_cond_signal(&currentlyAnsweringCondition[id]);
         }
-
+        
+        pthread_mutex_unlock(&mutex);
     }
-    pthread_mutex_unlock(&mutex);
+   
 }
+
+
 
 void *moderator(void *args){
     
+    
     for(int i = 0; i<q; i++){ //Moderator is going to ask q questions 1 by 1
         pthread_mutex_lock(&mutex);
-
         currComentator = 0;
         answerQueueCount = 0;
-
+        
         printf("Moderator asks question %d\n", (i+1));
-        pthread_cond_wait(&wait_for_commentator_threds, &mutex);
-        printf("before broad\n");
+        if(i == 0){
+            pthread_cond_wait(&wait_for_commentator_threds, &mutex);
+        }
         pthread_cond_broadcast(&question_available); //all commentators is going to decide to answer now.
-        printf("after broad\n");
-        pthread_cond_wait(&all_comentators_decided, &mutex); //commentators decided to answer now we can let them answer 1 by 1
-        printf("after wait moderator\n");
 
+        pthread_cond_wait(&all_comentators_decided, &mutex); //commentators decided to answer now we can let them answer 1 by 1
+
+        for (int i = 0; i < n; i++)
+        {
+            /* code */
+            printf("answerqueue %d: %d\n",i , answerQueue[i]);
+            pthread_cond_signal(&answerQueueConditions[answerQueue[i]]);
+
+            pthread_cond_wait(&currentlyAnsweringCondition[answerQueue[i]], &mutex);
+        }
+        pthread_mutex_unlock(&mutex);
     }
-    pthread_mutex_unlock(&mutex);
+    
 }
 
