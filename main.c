@@ -69,7 +69,30 @@ pthread_cond_t wait_for_commentator_threds = PTHREAD_COND_INITIALIZER;
 
 int answerQueue[MAX_COMMENTATOR_NUM];
 
+//Time variables for logging
+struct timeval start_time;
+struct timeval curr_time;
+char curr_time_val[12]; // [MM:SS.MSMS]
+
+void updateRunTime(){
+
+    gettimeofday(&curr_time, NULL);
+
+    int min = (curr_time.tv_sec - start_time.tv_sec) / 60;
+    int sec = curr_time.tv_sec - start_time.tv_sec - (min * 60);
+    int ms = (curr_time.tv_usec - start_time.tv_usec) / 1000; // (microsecond / 1000) = milisecond
+
+    if(ms < 0) {
+        ms += 1000;
+        sec -= 1;
+    }
+
+    sprintf(curr_time_val, "[%02d:%02d.%03d]", min, sec, ms);
+}
+
 int main(int argc, char *argv[]) {
+
+    gettimeofday(&start_time, NULL); //start time for logging
 
     for(int i = 1; i < argc; i+=2){ // start from first arg go setting by setting
         if (strcmp(argv[i], "-n") == 0) {
@@ -88,18 +111,21 @@ int main(int argc, char *argv[]) {
             b = atof(argv[i + 1]);
         }
     }
-    printf("n: %d, q: %d, p: %f, t: %.3f, b: %f\n", n, q, p, t, b);
+    updateRunTime();
+    printf("%s Values initialized n: %d, q: %d, p: %f, t: %.3f, b: %f\n", curr_time_val, n, q, p, t, b);
 
     //initialize semaphores
     sem_init(&commentator_sem, 0, 1);
 
     pthread_create(&threads[0], NULL, moderator, NULL); //Create 1 moderator thread
-    printf("Moderator thread created.\n");
+    updateRunTime();
+    printf("%s Moderator thread created.\n", curr_time_val);
 
     for(int i = 1; i<(n + 1); i++){
         pthread_create(&threads[i], NULL, commentator, (void *)(long)i); //Create n commentator thread
     }
-    printf("Commentator threads created.\n");
+    updateRunTime();
+    printf("%s Commentator threads created.\n", curr_time_val);
     
     for(int i = 0; i <= n + 1; ++i){
         pthread_join(threads[i], NULL);
@@ -113,7 +139,7 @@ int createdCommentatorCount = 0;
 void *commentator(void *args){
     int id = (long) args;
     createdCommentatorCount++;
-    printf("%d\n", createdCommentatorCount);
+    // printf("%d\n", createdCommentatorCount);
     if(createdCommentatorCount == n){
         pthread_cond_signal(&wait_for_commentator_threds);
     }
@@ -126,7 +152,7 @@ void *commentator(void *args){
         //---- decide to answer
         int answer = 0;
         double prob = (double)(random() % (1000))/1000;
-        printf("probability: %.3f\n", prob);
+        // printf("probability: %.3f\n", prob);
         if(prob < p){ // this commentator answers
             answer = 1;
         }else{ //dont answer
@@ -137,7 +163,8 @@ void *commentator(void *args){
         sem_wait(&commentator_sem); //wait for other commentator
         if(answer == 1){
             answerQueueCount++;
-            printf("commentator #%d generates answer, position in queue: %d\n", id, answerQueueCount);
+            updateRunTime();
+            printf("%s commentator #%d generates answer, position in queue: %d\n", curr_time_val, id, answerQueueCount);
             answerQueue[currComentator] = id;
         }else{
             answerQueue[currComentator] = 0;
@@ -153,9 +180,11 @@ void *commentator(void *args){
             pthread_cond_wait(&answerQueueConditions[id], &mutex);
             //--> we are waiting untill it is our turn to answer.
             double answerDuration = (double)(random() % (int)(t * 1000))/1000;
-            
-            printf("%d has answered for %.3f\n", id, answerDuration);
+            updateRunTime();
+            printf("%s Commentator #%d's turn to speak for %.3f seconds.\n", curr_time_val, id, answerDuration);
             pthread_sleep((double) answerDuration);
+            updateRunTime();
+            printf("%s Commentator #%d finished speaking.\n", curr_time_val, id);
             pthread_cond_signal(&currentlyAnsweringCondition[id]);
         }
         
@@ -173,8 +202,8 @@ void *moderator(void *args){
         pthread_mutex_lock(&mutex);
         currComentator = 0;
         answerQueueCount = 0;
-        
-        printf("Moderator asks question %d\n", (i+1));
+        updateRunTime();
+        printf("%s Moderator asks question %d\n", curr_time_val, (i+1));
         if(i == 0){
             pthread_cond_wait(&wait_for_commentator_threds, &mutex);
         }
@@ -186,7 +215,7 @@ void *moderator(void *args){
         {
             /* code */
             if(answerQueue[i] != 0){
-                printf("answerqueue %d: %d\n",i , answerQueue[i]);
+                // printf("answerqueue %d: %d\n",i , answerQueue[i]);
                 pthread_cond_signal(&answerQueueConditions[answerQueue[i]]);
                 pthread_cond_wait(&currentlyAnsweringCondition[answerQueue[i]], &mutex);
             }
