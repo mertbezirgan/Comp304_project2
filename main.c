@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
             b = atof(argv[i + 1]);
         }
     }
-    printf("n: %d, q: %d, p: %f, t: %f, b: %f\n", n, q, p, t, b);
+    printf("n: %d, q: %d, p: %f, t: %.3f, b: %f\n", n, q, p, t, b);
 
     //initialize semaphores
     sem_init(&commentator_sem, 0, 1);
@@ -125,9 +125,9 @@ void *commentator(void *args){
         pthread_cond_wait(&question_available, &mutex);
         //---- decide to answer
         int answer = 0;
-        double rand = (double) random() / RAND_MAX;
-
-        if(rand < p){ // this commentator answers
+        double prob = (double)(random() % (1000))/1000;
+        printf("probability: %.3f\n", prob);
+        if(prob < p){ // this commentator answers
             answer = 1;
         }else{ //dont answer
             answer = 0;
@@ -152,8 +152,10 @@ void *commentator(void *args){
         if(answer == 1){ //answer when its this comentator turns
             pthread_cond_wait(&answerQueueConditions[id], &mutex);
             //--> we are waiting untill it is our turn to answer.
+            double answerDuration = (double)(random() % (int)(t * 1000))/1000;
             
-            printf("%d has answered\n", id);
+            printf("%d has answered for %.3f\n", id, answerDuration);
+            pthread_sleep((double) answerDuration);
             pthread_cond_signal(&currentlyAnsweringCondition[id]);
         }
         
@@ -183,10 +185,11 @@ void *moderator(void *args){
         for (int i = 0; i < n; i++)
         {
             /* code */
-            printf("answerqueue %d: %d\n",i , answerQueue[i]);
-            pthread_cond_signal(&answerQueueConditions[answerQueue[i]]);
-
-            pthread_cond_wait(&currentlyAnsweringCondition[answerQueue[i]], &mutex);
+            if(answerQueue[i] != 0){
+                printf("answerqueue %d: %d\n",i , answerQueue[i]);
+                pthread_cond_signal(&answerQueueConditions[answerQueue[i]]);
+                pthread_cond_wait(&currentlyAnsweringCondition[answerQueue[i]], &mutex);
+            }
         }
         pthread_mutex_unlock(&mutex);
     }
